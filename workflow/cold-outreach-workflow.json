@@ -1,0 +1,1479 @@
+{
+  "name": "Cold Outreach System (generic template)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## COLD OUTREACH SYSTEM (generic template)\nFLOW A (top): finds companies for every ACTIVE row in the 'Offers' tab, reads each company's website for a public contact email, optionally uses Hunter (Settings: hunterMode = fallback | always | never), saves to 'Leads' as Pending (or Approved if autoApprove=TRUE).\nFLOW B (bottom): checks the Gmail inbox for replies/bounces, sends Email 1 to Approved leads, then follow-ups (day gaps set in Settings). Sender = the Gmail account connected in 'Send Email'.\n\nSETUP\n1. Create the Google Sheet from /sheet-templates (tabs: Leads, Offers, Settings).\n2. Fill BOTH Config nodes (Find + Send): API keys + Sheet ID. Tab names must match.\n3. Connect credentials: Google Sheets (all Sheets nodes), Gmail (Send Email + Check Inbox).\n4. START SAFE: Settings -> testMode=TRUE, testEmail=your other email, dailyLimit=2.\n5. Review leads (Status=Pending). Approved = send, Skip = ignore.\n6. When happy: testMode=FALSE. Raise dailyLimit slowly.\n\nSchedules use cron with 6 fields [sec min hour dom month dow] in your n8n timezone. Never commit real API keys.",
+        "height": 420,
+        "width": 560
+      },
+      "id": "2b9f5744-141f-4f15-a61f-e548e260b361",
+      "name": "Sticky Note - Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "b2663478-5e62-4132-a781-9199b1dcc780",
+      "name": "Daily Find Leads",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        64,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a0",
+              "name": "tavilyApiKey",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a1",
+              "name": "hunterApiKey",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "openaiApiKey",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "openaiModel",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "trackingSheetId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "leadsTab",
+              "value": "Leads",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "offersTab",
+              "value": "Offers",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "settingsTab",
+              "value": "Settings",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fdc99f89-4b7d-449f-9344-8bf43d593ccb",
+      "name": "Config (Find)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        304,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.settingsTab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "f85040ed-bade-4ce0-ab1d-2f2112d2d3bf",
+      "name": "Read Settings (Find)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        544,
+        432
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst m = {};\nfor (const r of rows) { if (r['Key']) m[String(r['Key']).trim()] = r['Value']; }\nconst bool = (v, d) => (v === undefined || v === '') ? d : ['true','yes','1'].includes(String(v).trim().toLowerCase());\nconst num = (v, d) => { const n = parseInt(v); return isNaN(n) ? d : n; };\nreturn [{ json: {\n  dailyLimit: num(m.dailyLimit, 2), findLimit: num(m.findLimit, 5),\n  testMode: bool(m.testMode, true), testEmail: String(m.testEmail || '').trim(),\n  autoApprove: bool(m.autoApprove, false),\n  senderName: m.senderName || 'Your Name', signatureExtra: m.signatureExtra || '',\n  optOutLine: m.optOutLine || \"If this isn't relevant, just reply 'no' and I won't email again.\",\n  hunterMode: String(m.hunterMode || 'fallback').trim().toLowerCase(),\n  followUpDay2: num(m.followUpDay2, 3), followUpDay3: num(m.followUpDay3, 4), gapMinutes: num(m.gapMinutes, 2)\n}}];"
+      },
+      "id": "c25d86f0-2c4d-4d6f-be64-0743e601ef4c",
+      "name": "Parse Settings (Find)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.offersTab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "277752b9-78b5-476a-bfa4-c55c6bab0f4e",
+      "name": "Read Offers (Find)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1024,
+        432
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const offers = $input.all().map(i => i.json)\n  .filter(o => o['Offer Name']).filter(o => String(o['Active'] || '').trim().toLowerCase() === 'yes')\n  .map(o => ({ name: o['Offer Name'], skill: o['Skill'] || '', pain: o['Pain Signals'] || '', pitch: o['Pitch Angle'] || '', target: o['Target Companies'] || '', region: o['Region'] || '', demo: o['Demo Link'] || '' }));\nreturn [{ json: { offers } }];"
+      },
+      "id": "ed51e803-fb98-4c3c-82e8-1fb0be30c604",
+      "name": "Pick Active Offers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.leadsTab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "b89d8803-88de-46cc-b349-3dcfae771a92",
+      "name": "Read Leads (Find)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1504,
+        432
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst domains = new Set(); const emails = new Set();\nfor (const r of rows) {\n  const w = String(r['Website'] || '').replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0].toLowerCase();\n  if (w) domains.add(w);\n  if (r['Email']) emails.add(String(r['Email']).toLowerCase());\n}\nreturn [{ json: { existingDomains: [...domains], existingEmails: [...emails] } }];"
+      },
+      "id": "4af1ab52-f245-4f5f-ab81-b7a0f8435968",
+      "name": "Tag Existing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const offers = $('Pick Active Offers').first().json.offers || [];\nconst today = new Date().toISOString().slice(0, 10);\nreturn offers.map(o => ({ json: { ...o, prompt:\n`You help a freelance ML/AI engineer find B2B clients. Write 4 web search queries that return the HOMEPAGES of small and mid-size companies, meaning the businesses themselves (the potential clients).\nNever target: blogs, \"best/top\" lists, directories, job boards, news, social media, or agencies/vendors that sell AI, software or automation (they are competitors, not clients).\nTarget companies: ${o.target}\nRegion: ${o.region}\nManual or costly work they likely still do by hand: ${o.pain}\nService we would offer: ${o.name} (${o.skill})\nQuery style: name the type of business plus a place plus a trait, then add \"about us\" or \"contact us\". Example: \"family-owned food packaging manufacturer Texas about us\". Do NOT use the words best, top, list, guide, companies in, providers, software, AI, solutions or vendors in any query.\nToday is ${today}; vary the angle and the city so results differ from earlier days.\nReturn ONLY a JSON array like [{\"query\":\"...\"}]. No other text.` } }));"
+      },
+      "id": "caf3a2f1-07e3-48d8-a945-8e48664c3f6b",
+      "name": "Build Keyword Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config (Find)').first().json.openaiApiKey }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Config (Find)').first().json.openaiModel, max_completion_tokens: 600, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "id": "447d33bc-758a-4875-98d2-7853cb37d337",
+      "name": "AI Keyword Generator (OpenAI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2224,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const offers = $('Build Keyword Prompts').all();\nconst out = [];\n$input.all().forEach((item, i) => {\n  const o = offers[i].json;\n  let list = [];\n  try {\n    const t = item.json.choices[0].message.content;\n    list = JSON.parse(t.match(/\\[[\\s\\S]*\\]/)[0]).filter(x => x && x.query);\n  } catch (e) {}\n  if (!list.length) list = [{ query: `${o.target} ${o.region}`.slice(0, 120) }];\n  for (const x of list.slice(0, 4)) out.push({ json: { offerName: o.name, query: x.query } });\n});\nreturn out;"
+      },
+      "id": "8825d736-bd31-4dc2-a08c-a1344b5d055f",
+      "name": "Parse Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config (Find)').first().json.tavilyApiKey }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: $json.query, max_results: 8, search_depth: 'basic' }) }}",
+        "options": {}
+      },
+      "id": "c822c805-829a-46b9-b04a-90c25e5005c1",
+      "name": "Tavily Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2704,
+        432
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const kws = $('Parse Keywords').all();\nconst blocked = ['linkedin.com','facebook.com','instagram.com','twitter.com','x.com','youtube.com','tiktok.com','reddit.com','quora.com','medium.com','upwork.com','fiverr.com','freelancer.com','clutch.co','g2.com','capterra.com','wikipedia.org','github.com','pinterest.com','yelp.com','trustpilot.com','crunchbase.com','glassdoor.com','indeed.com','forbes.com','hubspot.com','zapier.com','amazon.com','alibaba.com','gov','edu'];\nconst junkTitle = /\\b(best|top|guide|how to|vs|versus|list of|review|reviews|ideas|examples|trends|statistics|companies in|suppliers in|providers in)\\b/i;\nconst junkPath = /\\/(blog|blogs|news|article|articles|post|posts|resources|guides|insights|press|learn|glossary|case-stud)/i;\nconst out = []; const seen = new Set();\n$input.all().forEach((item, i) => {\n  const offerName = kws[i] ? kws[i].json.offerName : '';\n  for (const r of (item.json.results || [])) {\n    const m = String(r.url || '').match(/^(https?:\\/\\/)([^\\/?#:]+)/i);\n    if (!m) continue;\n    const domain = m[2].replace(/^www\\./i, '').toLowerCase();\n    const origin = m[1].toLowerCase() + m[2].toLowerCase();\n    if (blocked.some(b => domain === b || domain.endsWith('.' + b))) continue;\n        if (/(^|\\.)(gov|edu|mil)(\\.[a-z]{2})?$/.test(domain) || /(^|\\.)(alberta|ontario|canada|gc|bcgov|nhs)\\.(ca|uk)$/.test(domain)) continue;\n    if (junkTitle.test(r.title || '') || junkPath.test(String(r.url))) continue;\n    if (seen.has(domain)) continue;\n    seen.add(domain);\n    out.push({ json: { companyName: (r.title || domain).split(/[|\\-–—]/)[0].trim(), website: origin, domain,\n      evidence: (r.content || '').replace(/\\s+/g, ' ').slice(0, 300), offerName } });\n  }\n});\nreturn out;"
+      },
+      "id": "85ab7535-2fac-4670-8e84-1689a25cb6ff",
+      "name": "Parse Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ex = new Set($('Tag Existing').first().json.existingDomains || []);\nconst limit = $('Parse Settings (Find)').first().json.findLimit;\nconst byOffer = {};\nfor (const i of $input.all()) {\n  if (ex.has(i.json.domain)) continue;\n  (byOffer[i.json.offerName] = byOffer[i.json.offerName] || []).push(i);\n}\nconst groups = Object.values(byOffer);\nconst out = [];\nfor (let k = 0; out.length < limit; k++) {\n  let added = false;\n  for (const g of groups) { if (g[k] && out.length < limit) { out.push(g[k]); added = true; } }\n  if (!added) break;\n}\nreturn out;"
+      },
+      "id": "ebcd44aa-c4d9-4543-a592-90ada77cdeed",
+      "name": "Dedup & Limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; OutreachResearchBot/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "39c01494-3099-4a08-8885-5ab1a6a9884c",
+      "name": "Fetch Homepage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3424,
+        432
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BAD = /\\.(png|jpe?g|gif|svg|webp|css|js|ico)$|example\\.|sentry|wixpress|godaddy|domain\\.com|yourdomain|email\\.com|noreply|no-reply|donotreply|u003e/i;\nconst pull = html => {\n  const set = new Set();\n  for (const m of (html.match(/mailto:([^\"'?\\s>]+)/gi) || [])) { try { set.add(decodeURIComponent(m.slice(7)).toLowerCase()); } catch (e) {} }\n  for (const m of (html.match(/[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}/gi) || [])) set.add(m.toLowerCase());\n  return [...set].filter(e => !BAD.test(e));\n};\nconst textOf = r => (r && typeof r.data === 'string') ? r.data : '';\nconst base = $('Dedup & Limit').all();\nconst out = [];\n$input.all().forEach((item, i) => {\n  const b = base[i].json;\n  const html = textOf(item.json).replace(/<style[\\s\\S]*?<\\/style>/gi, '');\n  const meta = (html.match(/<meta[^>]+name=[\"']description[\"'][^>]*content=[\"']([^\"']+)/i) || html.match(/<meta[^>]+content=[\"']([^\"']+)[\"'][^>]*name=[\"']description[\"']/i) || [])[1] || '';\n  const title = ((html.match(/<title[^>]*>([^<]+)/i) || [])[1] || '').trim();\n  let contactUrl = '';\n  for (const m of html.matchAll(/href=[\"']([^\"'#]+)[\"']/gi)) {\n    const href = m[1].trim();\n    if (!/contact|about|reach-us|get-in-touch|connect/i.test(href)) continue;\n    if (/^(mailto|tel|javascript):/i.test(href)) continue;\n    let full;\n    if (/^https?:\\/\\//i.test(href)) full = href;\n    else if (href.startsWith('//')) full = 'https:' + href;\n    else if (href.startsWith('/')) full = b.website + href;\n    else full = b.website + '/' + href;\n    const hm = full.match(/^https?:\\/\\/([^\\/?#:]+)/i);\n    if (hm && hm[1].replace(/^www\\./i, '').toLowerCase() === b.domain) { contactUrl = full; break; }\n  }\n  const parts = title.replace(/&amp;/g, '&').split(/\\s*[|\\-–—:]\\s*/).map(s => s.trim()).filter(s => s && !/^(home|homepage|welcome|official site)$/i.test(s));\nout.push({ json: { ...b, companyName: parts.find(s => s.length >= 2 && s.length <= 50) || b.companyName, pageTitle: title, metaDesc: meta.replace(/\\s+/g, ' ').slice(0, 300), contactUrl, homeEmails: pull(html) } });\n});\nreturn out;"
+      },
+      "id": "ab593e34-fa63-4001-8999-f70e73d71db3",
+      "name": "Parse Homepage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3664,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.contactUrl || $json.website }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; OutreachResearchBot/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "4312e3a6-fb0c-4d1d-9b9f-badb5c043ee9",
+      "name": "Fetch Contact Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3904,
+        432
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BAD = /\\.(png|jpe?g|gif|svg|webp|css|js|ico)$|example\\.|sentry|wixpress|godaddy|domain\\.com|yourdomain|email\\.com|noreply|no-reply|donotreply|u003e/i;\nconst GENERIC = /^(info|contact|hello|hi|sales|support|admin|office|enquiries|inquiries|mail|team|service|help|customerservice)@/i;\nconst FREE = /@(gmail|yahoo|outlook|hotmail|icloud|aol)\\./i;\nconst pull = html => {\n  const set = new Set();\n  for (const m of (html.match(/mailto:([^\"'?\\s>]+)/gi) || [])) { try { set.add(decodeURIComponent(m.slice(7)).toLowerCase()); } catch (e) {} }\n  for (const m of (html.match(/[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}/gi) || [])) set.add(m.toLowerCase());\n  return [...set].filter(e => !BAD.test(e));\n};\nconst textOf = r => (r && typeof r.data === 'string') ? r.data : '';\nconst base = $('Parse Homepage').all();\nconst taken = new Set($('Tag Existing').first().json.existingEmails || []);\nconst out = [];\n$input.all().forEach((item, i) => {\n  const b = base[i].json;\n  const all = [...new Set([...(b.homeEmails || []), ...pull(textOf(item.json))])].filter(e => !taken.has(e));\n  const sameDomain = e => e.split('@')[1] === b.domain || e.split('@')[1].endsWith('.' + b.domain);\n  const rank = e => (sameDomain(e) ? (GENERIC.test(e) ? 2 : 3) : (FREE.test(e) ? 1 : 0));\n  all.sort((x, y) => rank(y) - rank(x));\n  const best = all.find(e => rank(e) > 0) || '';\n  out.push({ json: { companyName: b.companyName, website: b.website, domain: b.domain, offerName: b.offerName,\n    evidence: b.metaDesc || b.evidence || b.pageTitle || '',\n    siteEmail: best, siteEmailType: best ? (GENERIC.test(best) || FREE.test(best) ? 'generic' : 'personal') : '' } });\n});\nreturn out;"
+      },
+      "id": "9c36469e-7ed5-4fb2-93b4-4ae991891483",
+      "name": "Parse Contact Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4144,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "ifHc",
+              "leftValue": "={{ (() => { const m = $('Parse Settings (Find)').first().json.hunterMode; return m !== 'never' && (!$json.siteEmail || (m === 'always' && $json.siteEmailType === 'generic')); })() }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8545d142-0785-46e8-ba68-96efbaae0727",
+      "name": "Needs Hunter?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4384,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.hunter.io/v2/domain-search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "domain",
+              "value": "={{ $json.domain }}"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $('Config (Find)').first().json.hunterApiKey }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ea05e426-76bd-48fc-95c3-2bcb7b963431",
+      "name": "Hunter Find Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4624,
+        544
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Needs Hunter?').all(0);\nconst goodRole = /owner|founder|ceo|president|director|head|manager|operations|coo|cto|general|partner|principal/i;\nconst taken = new Set($('Tag Existing').first().json.existingEmails || []);\nconst out = [];\n$input.all().forEach((item, i) => {\n  const c = base[i].json;\n  const d = (item.json && item.json.data) || {};\n  const list = (d.emails || []).filter(e => e.value && (e.confidence || 0) >= 60 && !taken.has(String(e.value).toLowerCase()));\n  const score = e => (e.type === 'personal' ? 100 : 0) + (goodRole.test((e.position || '') + ' ' + (e.department || '')) ? 50 : 0) + (e.confidence || 0) / 10;\n  list.sort((a, b) => score(b) - score(a));\n  const best = list[0];\n  if (best) {\n    out.push({ json: { companyName: d.organization || c.companyName, website: c.website, email: best.value, contactName: best.first_name || '',\n      offerName: c.offerName, evidence: c.evidence, emailNote: 'email via Hunter' + (best.position ? ' (' + best.position + ')' : '') } });\n  } else if (c.siteEmail) {\n    out.push({ json: { companyName: c.companyName, website: c.website, email: c.siteEmail, contactName: '', offerName: c.offerName,\n      evidence: c.evidence, emailNote: 'email via website (' + c.siteEmailType + ')' } });\n  }\n});\nreturn out;"
+      },
+      "id": "00ef56d5-54d0-4ed2-a12e-de2bdcce8737",
+      "name": "Attach Hunter Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4864,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().filter(i => i.json.siteEmail).map(i => ({ json: {\n  companyName: i.json.companyName, website: i.json.website, email: i.json.siteEmail, contactName: '', offerName: i.json.offerName,\n  evidence: i.json.evidence, emailNote: 'email via website (' + i.json.siteEmailType + ')' } }));"
+      },
+      "id": "57942c1d-4c39-4d59-b50b-39ce21d9e28e",
+      "name": "Use Site Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4624,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Find)').first().json.leadsTab }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $json.email }}",
+            "Company Name": "={{ $json.companyName }}",
+            "Website": "={{ $json.website }}",
+            "Contact Name": "={{ $json.contactName }}",
+            "Offer": "={{ $json.offerName }}",
+            "Signal Evidence": "={{ $json.evidence }}",
+            "Status": "={{ $('Parse Settings (Find)').first().json.autoApprove ? 'Approved' : 'Pending' }}",
+            "Step": "0",
+            "Date Added": "={{ $now.format('yyyy-MM-dd') }}",
+            "Notes": "={{ $json.emailNote }}"
+          },
+          "matchingColumns": [
+            "Email"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "8fffbb2c-5d14-4873-a480-7883f72146d6",
+      "name": "Add to Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5104,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 21 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "45057973-28b4-475c-8003-91cd917c04cf",
+      "name": "Daily Send Emails",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        64,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a0",
+              "name": "openaiApiKey",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a1",
+              "name": "openaiModel",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "trackingSheetId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "leadsTab",
+              "value": "Leads",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "offersTab",
+              "value": "Offers",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "settingsTab",
+              "value": "Settings",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fc648ab3-1ae1-420d-b616-d447d1b0b3b4",
+      "name": "Config (Send)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        304,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.settingsTab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "45cc63db-fc0f-4aa3-8c15-c4992008d1da",
+      "name": "Read Settings (Send)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        544,
+        1072
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst m = {};\nfor (const r of rows) { if (r['Key']) m[String(r['Key']).trim()] = r['Value']; }\nconst bool = (v, d) => (v === undefined || v === '') ? d : ['true','yes','1'].includes(String(v).trim().toLowerCase());\nconst num = (v, d) => { const n = parseInt(v); return isNaN(n) ? d : n; };\nreturn [{ json: {\n  dailyLimit: num(m.dailyLimit, 2), findLimit: num(m.findLimit, 5),\n  testMode: bool(m.testMode, true), testEmail: String(m.testEmail || '').trim(),\n  autoApprove: bool(m.autoApprove, false),\n  senderName: m.senderName || 'Your Name', signatureExtra: m.signatureExtra || '',\n  optOutLine: m.optOutLine || \"If this isn't relevant, just reply 'no' and I won't email again.\",\n  hunterMode: String(m.hunterMode || 'fallback').trim().toLowerCase(),\n  followUpDay2: num(m.followUpDay2, 3), followUpDay3: num(m.followUpDay3, 4), gapMinutes: num(m.gapMinutes, 2)\n}}];"
+      },
+      "id": "14c6f99a-80b7-4023-acb0-fe225094fb60",
+      "name": "Parse Settings (Send)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.offersTab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "cc9b7e9f-f8a2-4120-82a3-8dab17ec1073",
+      "name": "Read Offers (Send)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1024,
+        1072
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const offers = $input.all().map(i => i.json)\n  .filter(o => o['Offer Name'])\n  .map(o => ({ name: o['Offer Name'], skill: o['Skill'] || '', pain: o['Pain Signals'] || '', pitch: o['Pitch Angle'] || '', target: o['Target Companies'] || '', region: o['Region'] || '', demo: o['Demo Link'] || '' }));\nreturn [{ json: { offers } }];"
+      },
+      "id": "3565a6be-8fd6-4b47-8ebc-2e58dd8c5cbc",
+      "name": "Pack Offers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.leadsTab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "31239fa6-f321-4350-87bf-0e8ad866e196",
+      "name": "Read Leads (Send)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1504,
+        1072
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 100,
+        "filters": {
+          "q": "in:inbox newer_than:30d"
+        }
+      },
+      "id": "3f183cc5-cd88-47b2-992e-6778b0a2addb",
+      "name": "Check Inbox",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1744,
+        1072
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const S = $('Parse Settings (Send)').first().json;\nconst offers = $('Pack Offers').first().json.offers || [];\nconst leads = $('Read Leads (Send)').all().map(i => i.json);\nconst inbox = $input.all().map(i => i.json);\nconst today = new Date(); today.setHours(0, 0, 0, 0);\nconst daysSince = s => { const d = new Date(s); return isNaN(d) ? 999 : Math.floor((today - d) / 86400000); };\nconst fromOf = j => JSON.stringify(j.From ?? j.from ?? '').toLowerCase();\nconst out = [];\nconst due = [];\nfor (const l of leads) {\n  const email = String(l['Email'] || '').trim().toLowerCase();\n  const status = String(l['Status'] || '').trim();\n  if (!email) continue;\n  if (status === 'Active') {\n    const replied = inbox.some(j => fromOf(j).includes(email) && !/mailer-daemon|postmaster/.test(fromOf(j)));\n    const bounced = inbox.some(j => /mailer-daemon|postmaster/.test(fromOf(j)) && JSON.stringify(j).toLowerCase().includes(email));\n    if (replied) { out.push({ json: { _action: 'mark', email: l['Email'], newStatus: 'Replied', note: 'Reply detected ' + today.toISOString().slice(0, 10) } }); continue; }\n    if (bounced) { out.push({ json: { _action: 'mark', email: l['Email'], newStatus: 'Bounced', note: 'Bounce detected ' + today.toISOString().slice(0, 10) } }); continue; }\n  }\n  const step = parseInt(l['Step'] || 0) || 0;\n  let next = 0;\n  if (status === 'Approved' && step === 0) next = 1;\n  else if (status === 'Active' && step === 1 && daysSince(l['Last Sent Date']) >= S.followUpDay2) next = 2;\n  else if (status === 'Active' && step === 2 && daysSince(l['Last Sent Date']) >= S.followUpDay3) next = 3;\n  if (!next) continue;\n  const o = offers.find(x => x.name === l['Offer']) || {};\n  due.push({ nextStep: next, json: { _action: 'send', email: l['Email'], company: l['Company Name'], website: l['Website'], contact: l['Contact Name'] || '',\n    offerName: l['Offer'] || '', evidence: l['Signal Evidence'] || '', lastSubject: l['Last Subject'] || '',\n    skill: o.skill || '', pain: o.pain || '', pitch: o.pitch || '', demo: o.demo || '', nextStep: next } });\n}\ndue.sort((a, b) => b.nextStep - a.nextStep);   // follow-ups first\nreturn [...out, ...due.slice(0, S.dailyLimit).map(d => ({ json: d.json }))];"
+      },
+      "id": "557e75ca-4b2e-4370-8645-38a95ecfbf76",
+      "name": "Decide Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "isSendc",
+              "leftValue": "={{ $json._action }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "send"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "82c71d7b-c597-4974-9e99-2aede6e4e265",
+      "name": "Action Is Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "52a29d7a-a0ae-4222-9737-516014563c2d",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2464,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const S = $('Parse Settings (Send)').first().json;\nconst j = $json;\nconst first = String(j.contact || '').trim();\nconst rules = j.nextStep === 1 ? 'Email 1 of 3: 70 to 90 words. Tone: professional, courteous and confident, like an experienced consultant writing to a peer; no slang, no exclamation marks, no words in capital letters, never sound desperate or salesy. Do NOT open with praise or flattery (never write \"I was impressed\", \"I admire\", \"I noticed your great\"), and do not open with an introduction of ourselves. Format: three short paragraphs separated by a blank line (use \\\\n\\\\n inside the JSON string). Paragraph 1: one specific observation that uses a concrete detail from the snippet (such as number of states, type of operation, services or products) and ties it to a manual or document-heavy process they likely handle, hedged with \"often\" or \"typically\"; if the snippet has no concrete detail, ask a short question about how they currently handle that process instead of making a generic industry statement. Paragraph 2: one sentence introducing ourselves, \"I work with a small team that builds ...\" matched to the offer, with no invented clients or results. Paragraph 3: a soft invitation: if they have a project in view, we would be glad to discuss the requirements, and once the scope is clear we can prepare a short demo of the approach before they commit; then one polite closing question such as \"Is this something you are currently exploring?\". Do NOT offer a free demo unconditionally. Do not mention price.'\n  : j.nextStep === 2 ? 'Email 2 of 3 (follow-up): under 50 words. Add one new useful angle. No guilt, no \"just checking in\".'\n  : 'Email 3 of 3 (last note): under 40 words. Polite, leave the door open.';\nconst prompt = `You are writing a cold B2B email on behalf of ${S.senderName}, a freelance ML / AI engineer.\n${rules}\nRecipient: ${first || 'first name unknown'} at ${j.company} (${j.website}).\nWhat we know about the company (web search snippet, may be incomplete): ${j.evidence || 'nothing'}\nOffer to pitch: ${j.offerName} - ${j.skill}\nTypical manual pain for this offer: ${j.pain}\nPitch angle: ${j.pitch}\nDemo/proof link (include it ONCE only if non-empty, and describe it as \"a sample of our team's work\", never \"my work\"): ${j.demo || 'none'}\nRules: plain text, no markdown, no emojis, no hype, no links unless a demo link is given. NEVER invent clients, results, numbers or claims. Mention a specific problem only if the snippet supports it; otherwise ask how they currently handle that work. Use hedged wording for time savings (\"can\", \"typically\"). Do NOT write a signature or opt-out line (added automatically). Start with \"${first ? 'Hi ' + first + ',' : 'Hi there,'}\".\nReturn ONLY JSON: {\"subject\":\"...\",\"body\":\"...\"}. Subject: 3 to 6 words, written as a short question about a specific process at their company (for example \"Dispatch paperwork at National Delivery?\"), must include the company name, sentence case, and avoid hype or spam words (free, boost, improve, solution, automation, offer, discount).`;\nreturn { json: { ...j, prompt } };"
+      },
+      "id": "caf8f65c-3144-4607-9b24-6023f03e335f",
+      "name": "Build Email Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config (Send)').first().json.openaiApiKey }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Config (Send)').first().json.openaiModel, max_completion_tokens: 500, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "id": "8088bf1c-136a-4dc4-8896-689dbeb215d1",
+      "name": "OpenAI Write Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2944,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const S = $('Parse Settings (Send)').first().json;\nconst src = $('Build Email Prompt').item.json;\nlet subject = 'Quick question for ' + src.company, body = '';\ntry {\n  const p = JSON.parse($json.choices[0].message.content.match(/\\{[\\s\\S]*\\}/)[0]);\n  subject = p.subject || subject; body = p.body || '';\n} catch (e) {}\nif (!body) throw new Error('AI returned no usable email for ' + src.company);\nbody = body.replace(/\\\\n/g, '\\n');\nif (src.nextStep > 1 && src.lastSubject) subject = /^re:/i.test(src.lastSubject) ? src.lastSubject : 'Re: ' + src.lastSubject;\nconst sig = 'Best,\\n' + S.senderName + (S.signatureExtra ? '\\n' + S.signatureExtra : '');\nconst full = body.trim() + '\\n\\n' + sig + '\\n\\n' + S.optOutLine;\nif (S.testMode && !S.testEmail) throw new Error('testMode is TRUE but testEmail is empty in the Settings tab');\nreturn { json: {\n  email: src.email, company: src.company, step: src.nextStep, baseSubject: subject, testMode: S.testMode,\n  sendTo: S.testMode ? S.testEmail : src.email,\n  subject: S.testMode ? '[TEST for ' + src.email + '] ' + subject : subject,\n  body: full } };"
+      },
+      "id": "124051ab-012f-4234-a7bd-4879ff5fde74",
+      "name": "Extract Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.sendTo }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "3d12869d-4c8b-4a59-92f8-8270454d4030",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3424,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "isTestc",
+              "leftValue": "={{ $('Extract Email').item.json.testMode }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "31c3ff55-339d-4faf-9a70-5dc532c11e28",
+      "name": "Test Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3664,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.leadsTab }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $('Extract Email').item.json.email }}",
+            "Status": "={{ $('Extract Email').item.json.step >= 3 ? 'Done' : 'Active' }}",
+            "Step": "={{ $('Extract Email').item.json.step }}",
+            "Last Sent Date": "={{ $now.format('yyyy-MM-dd') }}",
+            "Last Subject": "={{ $('Extract Email').item.json.baseSubject }}"
+          },
+          "matchingColumns": [
+            "Email"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "b54ba774-84c3-4e5a-9587-10f22661187c",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3904,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('Parse Settings (Send)').first().json.gapMinutes }}",
+        "unit": "minutes"
+      },
+      "id": "afd52092-a566-4fde-8a60-e6527408019d",
+      "name": "Wait Between Sends",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4144,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.trackingSheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Config (Send)').first().json.leadsTab }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $json.email }}",
+            "Status": "={{ $json.newStatus }}",
+            "Notes": "={{ $json.note }}"
+          },
+          "matchingColumns": [
+            "Email"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "8ee48e26-02cd-4f37-902d-40c59f7f867f",
+      "name": "Mark Replied / Bounced",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2464,
+        1232
+      ]
+    }
+  ],
+  "connections": {
+    "Config (Find)": {
+      "main": [
+        [
+          {
+            "node": "Read Settings (Find)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings (Find)": {
+      "main": [
+        [
+          {
+            "node": "Parse Settings (Find)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Settings (Find)": {
+      "main": [
+        [
+          {
+            "node": "Read Offers (Find)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Offers (Find)": {
+      "main": [
+        [
+          {
+            "node": "Pick Active Offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Active Offers": {
+      "main": [
+        [
+          {
+            "node": "Read Leads (Find)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads (Find)": {
+      "main": [
+        [
+          {
+            "node": "Tag Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag Existing": {
+      "main": [
+        [
+          {
+            "node": "Build Keyword Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Keyword Prompts": {
+      "main": [
+        [
+          {
+            "node": "AI Keyword Generator (OpenAI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Keyword Generator (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "Parse Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Keywords": {
+      "main": [
+        [
+          {
+            "node": "Tavily Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tavily Search": {
+      "main": [
+        [
+          {
+            "node": "Parse Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Results": {
+      "main": [
+        [
+          {
+            "node": "Dedup & Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup & Limit": {
+      "main": [
+        [
+          {
+            "node": "Fetch Homepage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Homepage": {
+      "main": [
+        [
+          {
+            "node": "Parse Homepage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Homepage": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contact Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contact Page": {
+      "main": [
+        [
+          {
+            "node": "Parse Contact Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Contact Page": {
+      "main": [
+        [
+          {
+            "node": "Needs Hunter?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Hunter?": {
+      "main": [
+        [
+          {
+            "node": "Hunter Find Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use Site Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hunter Find Email": {
+      "main": [
+        [
+          {
+            "node": "Attach Hunter Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Hunter Email": {
+      "main": [
+        [
+          {
+            "node": "Add to Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Site Email": {
+      "main": [
+        [
+          {
+            "node": "Add to Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config (Send)": {
+      "main": [
+        [
+          {
+            "node": "Read Settings (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings (Send)": {
+      "main": [
+        [
+          {
+            "node": "Parse Settings (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Settings (Send)": {
+      "main": [
+        [
+          {
+            "node": "Read Offers (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Offers (Send)": {
+      "main": [
+        [
+          {
+            "node": "Pack Offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pack Offers": {
+      "main": [
+        [
+          {
+            "node": "Read Leads (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads (Send)": {
+      "main": [
+        [
+          {
+            "node": "Check Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Inbox": {
+      "main": [
+        [
+          {
+            "node": "Decide Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Actions": {
+      "main": [
+        [
+          {
+            "node": "Action Is Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Is Send?": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Replied / Bounced",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build Email Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Write Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Write Email": {
+      "main": [
+        [
+          {
+            "node": "Extract Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Test Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Mode?": {
+      "main": [
+        [
+          {
+            "node": "Wait Between Sends",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Sent": {
+      "main": [
+        [
+          {
+            "node": "Wait Between Sends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Between Sends": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Send Emails": {
+      "main": [
+        [
+          {
+            "node": "Config (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Find Leads": {
+      "main": [
+        [
+          {
+            "node": "Config (Find)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
