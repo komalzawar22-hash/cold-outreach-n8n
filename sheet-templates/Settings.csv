@@ -1,0 +1,13 @@
+Key,Value
+testMode,TRUE
+testEmail,your-other-email@example.com
+dailyLimit,2
+findLimit,10
+autoApprove,FALSE
+senderName,Your Name
+signatureExtra,LinkedIn: https://www.linkedin.com/in/your-profile
+optOutLine,"If this isn't relevant, just reply 'no' and I won't email again."
+hunterMode,never
+followUpDay2,3
+followUpDay3,4
+gapMinutes,2

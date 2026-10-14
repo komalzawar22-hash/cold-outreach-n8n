@@ -1,0 +1,3 @@
+Offer Name,Skill,Pain Signals,Pitch Angle,Target Companies,Region,Demo Link,Active
+Invoice data extraction,OCR + document AI,"Staff retype data from PDF or paper invoices into spreadsheets","Turn invoices into clean structured rows automatically","Small logistics and distribution companies","United States",,yes
+Report automation,Python + Google Sheets + dashboards,"Weekly reports built by hand from several spreadsheets","Automatic weekly report and dashboard","Small agencies and service businesses","United States",,no
